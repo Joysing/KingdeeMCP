@@ -39,6 +39,15 @@ python -m pytest tests/test_integration.py -v
 python -m pytest tests/e2e -v -m e2e
 ```
 
+Run the evaluation layer (`evals/` — agent 行为评估与回归对比，详见 `evals/README.md`）:
+```bash
+# 离线自检整条评估管线（mock agent + mock 账套状态，无需金蝶、不写数据）
+python -m evals.run_eval --dry-run
+
+# 真实评估（连测试账套；需先把 evals/config.yaml 的 test_account.confirmed 设为 true）
+python -m evals.run_eval
+```
+
 ## Architecture
 
 This is a single-file MCP Server (`src/kingdee_mcp/server.py`) that bridges AI clients to Kingdee Cloud K/3 ERP via its WebAPI.

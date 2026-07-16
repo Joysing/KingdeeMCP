@@ -154,6 +154,7 @@ uvx kingdee-mcp
 | `kingdee_view_bill` | 查看单据完整详情 |
 | `kingdee_query_purchase_orders` | 查询采购订单 |
 | `kingdee_query_sale_orders` | 查询销售订单 |
+| `kingdee_query_sale_quotations` | 查询销售报价单（SAL_Quotation） |
 | `kingdee_query_stock_bills` | 查询出入库单据 |
 | `kingdee_query_inventory` | 查询即时库存 |
 | `kingdee_query_materials` | 查询物料档案 |
