@@ -53,12 +53,13 @@ AI 会自动调用金蝶 API 完成操作，无需手动登录 ERP 界面。
 
 ## 功能特性
 
-- **20 个 ERP 操作工具**：涵盖采购、销售、库存、基础资料等核心业务
+- **86 个工具**：覆盖生产、成本、资产、审计、采购、销售、库存等 13 大业务域
+- **元数据动态查询**：`get_bill_template` / `validate_bill` / `refresh_metadata`，元数据本地缓存
 - **4 个 SQL Server 探查工具**：搜索表、搜索字段、查看表结构、金蝶元数据候选发现
 - **自然语言操作**：用中文直接描述需求，AI 自动转换为 API 调用
 - **异步高性能**：基于 async/await，支持并发请求
 - **自动重试**：Session 过期自动重登，连接失败自动重试
-- **安全认证**：采用金蝶官方 WebAPI 认证，支持 AppSecret 方式，兼容公有云和私有云
+- **安全认证**：采用金蝶官方 WebAPI 认证，账号密码(ValidateUser)登录，兼容公有云和私有云，无第三方应用授权
 - **类型安全**：基于 Pydantic 数据验证，参数自动补全
 - **易于扩展**：基于 FastMCP 框架，轻松添加自定义工具
 - **使用示例**：提供 [9 个常见业务场景示例](./examples/)，覆盖查询、新建、审核、下推等操作
@@ -79,10 +80,9 @@ uvx kingdee-mcp
 
 ### 第一步：金蝶云星空后台授权
 
-1. 进入 **系统管理 → 第三方系统登录授权 → 新增**
-2. 新建一个集成用户（**不要用 Administrator**）
-3. 生成 **AppID** 和 **AppSecret**
-4. 为该用户分配所需模块的操作权限
+1. 准备一个金蝶云星空账号（建议专用集成账号，**不要用 Administrator**）
+2. 本服务采用**账号密码(ValidateUser)**登录，**无需**创建第三方应用、也无需 AppID / AppSecret
+3. 为该账号分配所需模块的操作权限
 
 ### 第二步：配置 MCP 客户端
 
@@ -97,9 +97,8 @@ uvx kingdee-mcp
       "env": {
         "KINGDEE_SERVER_URL": "http://your-server/k3cloud/",
         "KINGDEE_ACCT_ID": "你的账套ID",
-        "KINGDEE_USERNAME": "集成用户名",
-        "KINGDEE_APP_ID": "AppID",
-        "KINGDEE_APP_SEC": "AppSecret"
+        "KINGDEE_USERNAME": "金蝶账号",
+        "KINGDEE_PASSWORD": "金蝶账号密码"
       }
     }
   }
@@ -128,9 +127,8 @@ uvx kingdee-mcp
 |------|------|------|
 | `KINGDEE_SERVER_URL` | 金蝶服务器地址（需包含 /k3cloud/） | `http://your-server/k3cloud/` |
 | `KINGDEE_ACCT_ID` | 账套ID | `your-acct-id` |
-| `KINGDEE_USERNAME` | 集成用户名 | `your-username` |
-| `KINGDEE_APP_ID` | 应用ID | `your-app-id` |
-| `KINGDEE_APP_SEC` | 应用密钥（AppSecret） | `your-app-secret` |
+| `KINGDEE_USERNAME` | 金蝶账号 | `your-username` |
+| `KINGDEE_PASSWORD` | 金蝶账号密码（ValidateUser 登录，必填） | `your-password` |
 | `MCP_SQLSERVER_HOST` | SQL Server 主机（可选，用于数据库探查） | `localhost` |
 | `MCP_SQLSERVER_PORT` | SQL Server 端口（默认 1433） | `1433` |
 | `MCP_SQLSERVER_DATABASE` | 数据库名 | `AIS20260309171043` |
@@ -138,6 +136,26 @@ uvx kingdee-mcp
 | `MCP_SQLSERVER_PASSWORD` | SQL Server 密码 | `xxxx` |
 
 ## 可用工具列表
+
+共 **86 个工具**，按业务域分组（每组列出代表性工具，完整清单见 `src/kingdee_mcp/server.py`）：
+
+| 业务域 | 数量 | 代表性工具 |
+|--------|------|-----------|
+| 通用单据 | 10 | `kingdee_save_bill` · `kingdee_submit_bills` · `kingdee_audit_bills` · `kingdee_validate_bill` · `kingdee_push_and_audit` |
+| 生产制造 | 12 | `kingdee_query_production_orders` · `kingdee_save_production_order` · `kingdee_query_mrp_result` · `kingdee_push_production_pick` |
+| 成本核算 | 12 | `kingdee_query_material_cost` · `kingdee_query_cost_calculation` · `kingdee_save_cost_adjustment` · `kingdee_query_finished_product_cost` |
+| 固定资产 | 6 | `kingdee_query_fixed_asset` · `kingdee_save_asset` · `kingdee_query_asset_depreciation` |
+| 库存 | 9 | `kingdee_query_inventory` · `kingdee_query_stock_bills` · `kingdee_push_stock_transfer` · `kingdee_query_transfer_direct` |
+| 审计合规 | 7 | `kingdee_query_operation_logs` · `kingdee_query_change_log` · `kingdee_create_and_audit` · `kingdee_push_and_audit` |
+| 采购 | 4 | `kingdee_query_purchase_orders` · `kingdee_query_purchase_requisitions` · `kingdee_query_purchase_inquiry` |
+| 销售 | 2 | `kingdee_query_sale_orders` · `kingdee_query_sale_quotations` |
+| 工作流/审批 | 4 | `kingdee_query_pending_approvals` · `kingdee_workflow_approve` · `kingdee_query_approval_flow` |
+| 基础资料/权限 | 4 | `kingdee_query_materials` · `kingdee_query_partners` · `kingdee_query_user` · `kingdee_query_role` |
+| 元数据/探查 | 8 | `kingdee_get_fields` · `kingdee_list_forms` · `kingdee_get_bill_template` · `kingdee_discover_tables` |
+| 系统/查询 | 4 | `kingdee_query_system_config` · `kingdee_query_quality_inspections` · `kingdee_query_expense_reimburse` |
+| 统计 | 2 | `kingdee_usage_stats` · `kingdee_usage_report` |
+
+> 元数据探查含 4 个 SQL Server 工具（`kingdee_discover_tables` / `kingdee_discover_columns` / `kingdee_describe_table` / `kingdee_discover_metadata_candidates`），需配置 `MCP_SQLSERVER_*` 环境变量。
 
 ### 元数据查询
 
@@ -219,13 +237,13 @@ uvx kingdee-mcp
 ## 常见问题
 
 **Q: 提示认证失败怎么办？**
-检查 AppID / AppSecret 是否正确，集成用户是否有对应模块的访问权限。
+检查金蝶账号与密码(KINGDEE_PASSWORD)是否正确，该账号是否有对应模块的操作权限。
 
 **Q: 连接超时怎么解决？**
 检查 `KINGDEE_SERVER_URL` 是否正确（需包含 `/k3cloud/` 后缀），确保服务器可访问。
 
 **Q: 支持金蝶云星空公有云吗？**
-支持。公有云和私有云使用相同的 AppSecret 认证方式，配置方式完全一致。
+支持。公有云和私有云使用相同的账号密码(ValidateUser)认证方式，配置方式完全一致。
 
 ## 配合 mcp-sqlserver-introspect 使用
 
