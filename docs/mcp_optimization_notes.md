@@ -127,3 +127,15 @@
 - **配套配置**：`~/.workbuddy/mcp.json` 的 kingdee.env 已删除 APP_ID/APP_SEC 两行，新增 `KINGDEE_PASSWORD": ""`（占位待填真实密码）。
 - **验证**：`py_compile` 通过；`scripts/test_login.py` 空密码下正确抛 `未配置 KINGDEE_PASSWORD...`；全仓 grep 无 `APP_ID/APP_SEC/LoginByAppSecret/"login"` 残留。
 - **待办**：用户在 mcp.json 填入 `KINGDEE_PASSWORD` 真实值 + 重启 kingdee 连接器，即可实机跑通。
+
+### 20. 【已确认·更正】"含税单价不能小于等于0"的真正根因 = 字段顺序（FQUOTATIONFIN 必须在 FQUOTATIONENTRY 之前）
+- **更正说明**：此前 #9/#10 把"第1行分录，未免费的物料，含税单价不能小于等于0"归因于 `FCustId→FCustLocId` 误改 + 漏 `FSaleOrgId` + `FTaxPrice` 未落分录。**这是错的**。本次（2026-07-16 晚）用独立脚本直连 WebAPI 做了控制变量验证：
+  - 即便 `FCUSTID`/`FSaleOrgId` 都正确、`FPrice=1.0`/`FTaxPrice=1.13`/`FTaxRate=13` 都明传，只要 **`FQUOTATIONENTRY` 排在 `FQUOTATIONFIN` 之前**，仍 100% 报"含税单价≤0"；
+  - 仅把顺序调成 **`FQUOTATIONFIN` 在前、`FQUOTATIONENTRY` 在后**（其余完全不变），**立即保存成功**。
+  - 数值用 `1.0`/`1.13`（float）或 `"1.13"`（string）都不影响——确认**不是值类型问题，是本环境金蝶 Save 对字段顺序敏感**。
+- **根因（推断）**：本二开账套里销售报价单的金额计算依赖财务信息（结算币别 `FSettleCurrId`、是否含税 `FIsIncludedTax` 等，都在 `FQUOTATIONFIN`）。分录单价在反序列化/计算时若先于财务信息被处理，会因币种/含税标志未就绪而被算成 0，触发该校验规则。**这是金蝶服务端行为，MCP 无法靠改字段名规避。**
+- **已实施修复（server.py）**：
+  1. `kingdee_save_bill` 在 `validate_and_fix` 之后、发请求之前，新增防御性排序：把所有**非 ENTRY 键**（含 `FQUOTATIONFIN` 与表头字段）统一置于 **ENTRY 键**之前，保持"表头→FIN→ENTRY"的已知可用顺序，从根本上避免顺序踩坑；
+  2. `BILL_TEMPLATES["SAL_Quotation"]` 补上 `FQUOTATIONFIN: {"FSettleCurrId": {"FNumber": "PRE001"}}`，并**放在 `FQUOTATIONENTRY` 之前**，`get_bill_template` 现在直接给出正确顺序的骨架（结算币别默认 PRE001 人民币）。
+- **实测**：修复后 `kingdee_save_bill` 成功创建销售报价单 **`XSBJD0011`（FID 100024，26 行）**，客户=金蝶东方集团(CUST0001)，26 个电子料（1.02.001.0007.00006~.00031），单价/含税单价占位 0.01、税率 13%、销售组织 100、币别 PRE001。状态：草稿。
+- **注意**：改的是 `server.py` 源码，**当前在跑的连接器仍是旧代码**，需重启/重新信任 kingdee 连接器才能让排序修复与模板生效。

@@ -2700,6 +2700,16 @@ async def kingdee_save_bill(params: SaveInput) -> str:
         if validator:
             model, auto_fixes = validator.validate_and_fix(model)
 
+        # ⚠️ 本环境金蝶 Save 对字段顺序敏感：财务信息(含 FIN，如 FQUOTATIONFIN)
+        # 必须排在分录(含 ENTRY，如 FQUOTATIONENTRY)之前，否则分录单价被判定为 0
+        # 而报“含税单价不能小于等于0”。做防御性排序：所有非 ENTRY 键（含 FIN/表头）
+        # 统一置于 ENTRY 键之前，保持表头→FIN→ENTRY 的已知可用顺序。
+        _keys = list(model.keys())
+        _entry_keys = [k for k in _keys if "ENTRY" in k.upper()]
+        _non_entry = [k for k in _keys if k not in _entry_keys]
+        if _entry_keys and len(_non_entry) != len(_keys):
+            model = {k: model[k] for k in _non_entry + _entry_keys}
+
         result = await _post_raw(
             "save",
             params.form_id,
@@ -2730,10 +2740,11 @@ async def kingdee_save_bill(params: SaveInput) -> str:
 # ─────────────────────────────────────────────
 BILL_TEMPLATES: dict[str, dict] = {
     "SAL_Quotation": {
-        "_desc": "销售报价单（标准销售报价单 XSBJD01_SYS）。客户字段为全大写 FCUSTID；销售组织 FSaleOrgId 必填；分录 FUnitID 必填。",
+        "_desc": "销售报价单（标准销售报价单 XSBJD01_SYS）。客户字段为全大写 FCUSTID；销售组织 FSaleOrgId 必填；分录 FUnitID 必填。⚠️本环境 Save 对字段顺序敏感：财务信息 FQUOTATIONFIN 必须排在分录 FQUOTATIONENTRY 之前，否则含税单价被判定为 0 而保存失败；模板已将 FIN 置于 ENTRY 之前。",
         "FBillTypeID": {"FNumber": "XSBJD01_SYS"},
         "FSaleOrgId": {"FNumber": "100"},
         "FCUSTID": {"FNumber": "<客户编码, 如 CUST0001>"},
+        "FQUOTATIONFIN": {"FSettleCurrId": {"FNumber": "PRE001"}},
         "FQUOTATIONENTRY": [
             {
                 "FMaterialId": {"FNumber": "<物料编码>"},
