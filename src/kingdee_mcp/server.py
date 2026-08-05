@@ -1631,7 +1631,9 @@ async def _login() -> str:
             headers={"Content-Type": "application/json"},
         )
         resp.raise_for_status()
-        data = resp.json()
+        data = _safe_json(resp)
+        if isinstance(data, dict) and data.get("kd_error"):
+            raise RuntimeError(f"金蝶登录失败(非JSON响应): {data.get('message')}")
         if data.get("LoginResultType") != 1:
             raise RuntimeError(f"金蝶登录失败: {data.get('Message', '未知错误')}")
         _session_id = data["KDSVCSessionId"]
@@ -1690,7 +1692,7 @@ async def _post(ep_key: str, payload: Any) -> Any:
 
             resp.raise_for_status()
             success = True
-            return resp.json()
+            return _safe_json(resp)
     except Exception as e:
         error_msg = str(e)[:200]
         raise
@@ -1790,7 +1792,7 @@ async def _post_raw(ep_key: str, form_id: str, model: dict,
 
             resp.raise_for_status()
             success = True
-            return resp.json()
+            return _safe_json(resp)
     except Exception as e:
         error_msg = str(e)[:200]
         raise
@@ -1826,6 +1828,24 @@ def _get_session_lock() -> asyncio.Lock:
     if _session_lock is None:
         _session_lock = asyncio.Lock()
     return _session_lock
+
+
+def _safe_json(resp) -> Any:
+    """安全解析金蝶 WebAPI 返回。
+
+    金蝶在业务异常（如报表过滤参数为空导致未处理异常）时，HTTP 状态码仍为 200，
+    但响应正文是纯文本（形如 ``response_error: 发生时间... 错误信息...``），并非 JSON。
+    若直接 ``resp.json()`` 会抛 ``JSONDecodeError``，把真实报错掩盖成误导性信息。
+    这里兜底：解析失败则包成错误结构原样返回，便于上层/调用方排查真实原因。
+    """
+    try:
+        return resp.json()
+    except (json.JSONDecodeError, ValueError):
+        return {
+            "kd_error": True,
+            "http_status": getattr(resp, "status_code", 0),
+            "message": (resp.text or "").strip()[:2000],
+        }
 
 
 def _fmt(data: Any) -> str:
