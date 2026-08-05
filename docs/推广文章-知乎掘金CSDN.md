@@ -113,6 +113,7 @@ pip install kingdee-mcp
 
 ## 项目地址
 
+- Gitee 镜像（**国内访问最快，推荐**）：https://gitee.com/huangdouu/KingdeeMCP
 - GitHub：https://github.com/WaHaiLong/KingdeeMCP
 - 官网文档：https://wahailong.github.io/KingdeeMCP/
 - PyPI：https://pypi.org/project/kingdee-mcp/
