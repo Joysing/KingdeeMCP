@@ -135,6 +135,18 @@ uvx kingdee-mcp
 | `MCP_SQLSERVER_USER` | SQL Server 用户（建议只读账号） | `sa` |
 | `MCP_SQLSERVER_PASSWORD` | SQL Server 密码 | `xxxx` |
 
+## ⚠️ 从 0.1.0 升级的破坏性变更（重要）
+
+**0.2.0 起，登录方式从「第三方应用授权（AppID + AppSecret）」改为「账号密码（ValidateUser）」**，旧版的 `KINGDEE_APP_ID` / `KINGDEE_APP_SEC` 环境变量**已失效**。
+
+如果你之前的 MCP 客户端配置里用的是 AppID / AppSecret，升级后会出现登录失败。请按以下方式迁移：
+
+1. 在金蝶云星空创建一个专用集成账号（不要用 Administrator）；
+2. 把 MCP 配置里的环境变量改为：**删除** `KINGDEE_APP_ID`、`KINGDEE_APP_SEC`，**新增** `KINGDEE_PASSWORD` = 该集成账号的密码；
+3. 重启 MCP 客户端。
+
+> 之所以改用账号密码，是为了避开第三方应用授权的 APP 白名单限制，公有云 / 私有云都通用。
+
 ## 可用工具列表
 
 共 **86 个工具**，按业务域分组（每组列出代表性工具，完整清单见 `src/kingdee_mcp/server.py`）：
@@ -244,6 +256,31 @@ uvx kingdee-mcp
 
 **Q: 支持金蝶云星空公有云吗？**
 支持。公有云和私有云使用相同的账号密码(ValidateUser)认证方式，配置方式完全一致。
+
+**Q: 用 `uvx kingdee-mcp` 启动时报 `No module named 'mcp.server.fastmcp'`？**
+
+这是 `uvx` 的临时环境偶尔没把依赖（`mcp`）装全导致的，**不是包本身的问题**（PyPI 元数据已正确声明 `mcp[cli]>=1.0.0`）。两种解决方式：
+
+1. 清理 uv 缓存后重试：`uv cache clean`，再重新启动 `uvx kingdee-mcp`；
+2. 或改用 pip 安装 + 模块方式启动（更稳，推荐用于生产）：
+
+   ```bash
+   pip install kingdee-mcp
+   ```
+
+   MCP 客户端配置改为：
+
+   ```json
+   {
+     "mcpServers": {
+       "kingdee": {
+         "command": "python",
+         "args": ["-m", "kingdee_mcp.server"],
+         "env": { "KINGDEE_SERVER_URL": "...", "KINGDEE_ACCT_ID": "...", "KINGDEE_USERNAME": "...", "KINGDEE_PASSWORD": "..." }
+       }
+     }
+   }
+   ```
 
 ## 配合 mcp-sqlserver-introspect 使用
 
