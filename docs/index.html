@@ -789,6 +789,7 @@
           <li><a href="#tools">工具列表</a></li>
           <li><a href="#install">安装</a></li>
           <li><a href="#examples">示例</a></li>
+          <li><a href="#workbuddy">WorkBuddy</a></li>
           <li><a href="#changelog">更新日志</a></li>
           <li><a href="#faq">常见问题</a></li>
         </ul>
@@ -1224,6 +1225,98 @@
   bill_ids: ["SO2024001"]
 )</code></pre>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="workbuddy" class="installation">
+      <div class="container">
+        <div class="section-header">
+          <h2>在 WorkBuddy 中使用</h2>
+          <p>把 kingdee-mcp 接进 WorkBuddy，用自然语言查 / 操作金蝶云星空</p>
+        </div>
+
+        <div class="install-steps">
+          <div class="install-step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>打开连接器配置文件</h3>
+              <p>WorkBuddy 的 MCP 配置为用户级 <code>~/.workbuddy/mcp.json</code>（Windows 实际路径为 <code>C:\Users\你的用户名\.workbuddy\mcp.json</code>）。用编辑器打开它；若文件不存在则新建。</p>
+            </div>
+          </div>
+
+          <div class="install-step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>填入 kingdee 连接器</h3>
+              <p>在 <code>mcpServers</code> 中加入如下 <code>kingdee</code> 项（整体为 JSON，注意不要破坏其它已有的连接器）：</p>
+              <div class="code-wrapper">
+                <pre><code>{
+  "mcpServers": {
+    "kingdee": {
+      "command": "uvx",
+      "args": ["kingdee-mcp"],
+      "env": {
+        "KINGDEE_SERVER_URL": "http://你的金蝶地址/k3cloud/",
+        "KINGDEE_ACCT_ID": "你的账套ID",
+        "KINGDEE_USERNAME": "金蝶账号",
+        "KINGDEE_PASSWORD": "金蝶账号密码"
+      }
+    }
+  }
+}</code></pre>
+                <button class="code-copy-btn" onclick="copyCode(this)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  复制
+                </button>
+              </div>
+              <p style="margin-top:16px; font-size:0.9rem; color:var(--text-muted);">
+                <strong>四个环境变量说明：</strong><br>
+                <code>KINGDEE_SERVER_URL</code>：金蝶 WebAPI 站点地址，结尾带 <code>/k3cloud/</code><br>
+                <code>KINGDEE_ACCT_ID</code>：数据中心（账套）ID，登录页下拉账套时可见<br>
+                <code>KINGDEE_USERNAME</code> / <code>KINGDEE_PASSWORD</code>：金蝶账号密码（采用 ValidateUser 登录，<strong>无需</strong> AppID / AppSecret）
+              </p>
+            </div>
+          </div>
+
+          <div class="install-step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>保存并「重新信任」连接器</h3>
+              <p>WorkBuddy <strong>不会热重载</strong> <code>mcp.json</code>。改完配置后，打开连接器管理页，找到 <code>kingdee</code> 这一项，点击「重新信任 / 重启」，让它以新配置重新派生进程。</p>
+              <p style="margin-top:8px; color:#dc2626; font-size:0.9rem;">
+                ⚠️ 如果只改文件不重新信任，WorkBuddy 仍会跑旧进程（旧地址 / 旧账号），表现为查不到数据或登录失败。
+              </p>
+            </div>
+          </div>
+
+          <div class="install-step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+              <h3>在对话框里直接说就行</h3>
+              <p>信任成功后，新建一个任务，用自然语言描述你要做的事，例如：</p>
+              <ul style="margin:12px 0 12px 20px; line-height:1.9;">
+                <li>「查询最近 20 条已审核的销售订单」</li>
+                <li>「导出 2020 年 2 月 001 账簿的科目余额表」</li>
+                <li>「查物料 MAT001 的即时库存」</li>
+                <li>「帮我新建一张采购订单，供应商 S001，物料 MAT001，数量 100」</li>
+              </ul>
+              <p>查询类操作可以直接放心用；写操作（新建 / 审核 / 反审核 / 删除）建议先在测试账套验证，或让 AI 先把将要执行的参数展示给你确认。</p>
+            </div>
+          </div>
+
+          <div class="config-note">
+            <h4>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22,4 12,14.01 9,11.01"/>
+              </svg>
+              排障小贴士
+            </h4>
+            <p>① <strong>返回 0 行不一定是工具坏了</strong>：例如科目余额表选了账套里没有数据的期间（账簿 001 仅含 2020 年数据），会合法返回 0 行。</p>
+            <p>② <strong>账号权限异常常被包成通用报错</strong>：若账号缺少对应模块（如财务报表）的操作权限，查询可能返回 <code>Unknown Error</code> 而非明确权限提示，需在金蝶里给账号授权。</p>
+            <p>③ <strong>报表查询只支持简单账表</strong>：明细账、多账簿明细账等复杂账表接口会提示「此接口只支持简单账表!」。</p>
           </div>
         </div>
       </div>
