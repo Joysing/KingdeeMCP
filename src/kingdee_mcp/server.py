@@ -656,8 +656,12 @@ _EP = {
     "number_rule":   "Kingdee.BOS.WebApi.ServicesStub.NumberRuleService.QueryNumberRule.common.kdsvc",
     "sysconfig":    "Kingdee.BOS.WebApi.ServicesStub.SystemConfigService.QuerySystemConfig.common.kdsvc",
     "metadata":    "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.QueryBusinessInfo.common.kdsvc",
-    # 报表查询：总账/财务报表走专用 KDSReportAPIService.GetSysReportData（非 ExecuteBillQuery）
-    # 请求体为 {"formid": <formId>, "data": "<内层报表参数 JSON 字符串>"} 双层包裹（已据反编译 IsWriteDataOp 确认）
+    # 报表查询：总账/财务报表走 GetSysReportData（非 ExecuteBillQuery）。
+    # 实测确认端点为 KDSReportAPIService.GetSysReportData（DynamicFormService.GetSysReportData
+    # 在本账套实测一律报"表单标识为空"，不可用；官方示例里的 DynamicFormService 是
+    # 集成服务云内部逻辑名，真实落点是 KDSReportAPIService）。
+    # 请求体为 {"#data": [formId, model]} 或 {"formId/formid":..,"data":"<model JSON 串>"}；
+    # model 含 FieldKeys/Model(过滤)/StartRow/Limit 等（见 kingdee_query_report 说明）。
     "report":      "Kingdee.BOS.WebApi.ServicesStub.KDSReportAPIService.GetSysReportData.common.kdsvc",
 }
 
@@ -6494,10 +6498,15 @@ class ReportQueryInput(BaseModel):
     )
     data: dict = Field(
         ...,
-        description="透传给 GetSysReportData 的内部参数对象(JSON)，含报表过滤(账簿/年度/期间/科目等)与分页。"
-                    "字段名依具体报表而定，请用你账套的 BOS/在线测试确认。常见形态示例："
-                    '{"ReportParams":{"FBookId":"<账簿内码>","FYear":"2026","FPeriod":"8"},'
-                    '"FieldKeys":"FAccountNumber,FAccountName,FBeginBalance","PageIndex":1,"PageSize":1000}',
+        description="透传给 GetSysReportData 的 model 对象（#data 数组的第 2 个元素），"
+                    "含 FieldKeys / Model(过滤) / StartRow / Limit 等。字段名依具体报表而定。"
+                    "科目余额表(GL_RPT_AccountBalance)权威示例（金蝶开发者社区官方案例）："
+                    '{"FieldKeys":"FBALANCEID,FBALANCENAME,FACCTTYPE,FCyName,FDEBITLOCAL,FCREDITLOCAL",'
+                    '"SchemeId":"","StartRow":0,"Limit":10,"IsVerifyBaseDataField":"true",'
+                    '"FilterString":[],"Model":{"FACCTBOOKID":{"FNumber":"<账簿编码>"},'
+                    '"FCURRENCY":"1","FSTARTYEAR":"2026","FSTARTPERIOD":"7","FENDYEAR":"2026",'
+                    '"FENDPERIOD":"7","FBALANCELEVEL":"4","FSHOWDETAIL":false,"FFORBIDBALANCE":true,'
+                    '"FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true}}',
     )
 
 
@@ -6507,10 +6516,16 @@ class ReportQueryInput(BaseModel):
                  "idempotentHint": True, "openWorldHint": False}
 )
 async def kingdee_query_report(params: ReportQueryInput) -> str:
-    """通过金蝶专用报表服务 **GetSysReportData（查询报表数据）** 查询任意总账/财务报表。
+    """通过金蝶 WebAPI **GetSysReportData（查询报表数据）** 查询任意总账/财务报表。
 
-    与单据查询(ExecuteBillQuery)不同，报表走独立的 KDSReportAPIService.GetSysReportData 端点，
-    请求体为 {formid, data} 包裹，内层 data 为报表过滤/分页参数对象（依具体报表而定）。
+    端点：Kingdee.BOS.WebApi.ServicesStub.KDSReportAPIService.GetSysReportData.common.kdsvc
+    （实测确认：DynamicFormService.GetSysReportData 在本账套一律报"表单标识为空"，不可用）。
+
+    请求体为 {"#data": [formId, model]}，model 即本工具的 params.data（#data 数组第 2 个元素）。
+    model 典型结构：FieldKeys(返回字段) + Model(过滤条件) + StartRow/Limit(分页)。
+    与单据查询(ExecuteBillQuery)不同，报表分页用 StartRow/Limit，**不是** PageIndex/PageSize；
+    账簿用 FACCTBOOKID.FNumber（按编码，如 "001"），**不是** FBookId 内码；期间用
+    FSTARTYEAR/FSTARTPERIOD/FENDYEAR/FENDPERIOD（**注意是数字不是字符串**），层级用 FBALANCELEVEL。
 
     已实测确认的报表 formId（财务会计 → 总账）：
       - 科目余额表   = GL_RPT_AccountBalance
@@ -6518,19 +6533,24 @@ async def kingdee_query_report(params: ReportQueryInput) -> str:
     其余报表 formId 需在 BOS/ApiDoc 逐张查证（核算维度余额表、数量金额总账、日报表、
     多账簿系列、试算平衡表、现金流量表、现金流量查询、报表项目 KDS_RptItem 等）。
 
-    params.data 为透传给 GetSysReportData 的内部参数对象，常见字段示例（具体以报表元数据为准，
-    请在你自己的账套用 BOS 或在线测试验证字段名）：
-      {"ReportParams": {"FBookId": "<账簿内码>", "FYear": "2026", "FPeriod": "8"},
-       "FieldKeys": "FAccountNumber,FAccountName,FBeginBalance", "PageIndex": 1, "PageSize": 1000}
+    params.data（model）权威示例——科目余额表（金蝶开发者社区官方案例）：
+      {"FieldKeys":"FBALANCEID,FBALANCENAME,FACCTTYPE,FCyName,FDEBITLOCAL,FCREDITLOCAL",
+       "SchemeId":"","StartRow":0,"Limit":10,"IsVerifyBaseDataField":"true",
+       "FilterString":[],
+       "Model":{"FACCTBOOKID":{"FNumber":"<账簿编码>"},"FCURRENCY":"1",
+                "FSTARTYEAR":"2026","FSTARTPERIOD":"7","FENDYEAR":"2026","FENDPERIOD":"7",
+                "FBALANCELEVEL":"4","FSHOWDETAIL":false,"FFORBIDBALANCE":true,
+                "FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true}}
 
-    返回：金蝶原始 JSON（含报表数据），前端/调用方按需解析。
+    返回：金蝶原始 JSON（含报表数据 Rows），前端/调用方按需解析。
 
     Raises/Returns:
         str: JSON（成功为报表数据；失败为错误 JSON）
     """
     try:
         inner = params.data
-        payload = {"formid": params.form_id, "data": json.dumps(inner, ensure_ascii=False)}
+        # 权威结构：HTTP 表单字段 data = JSON({"#data": [formId, model]})
+        payload = {"#data": [params.form_id, inner]}
         result = await _post("report", payload)
         return _fmt(result)
     except Exception as e:
