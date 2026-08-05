@@ -657,12 +657,12 @@ _EP = {
     "sysconfig":    "Kingdee.BOS.WebApi.ServicesStub.SystemConfigService.QuerySystemConfig.common.kdsvc",
     "metadata":    "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.QueryBusinessInfo.common.kdsvc",
     # 报表查询：总账/财务报表走 GetSysReportData（非 ExecuteBillQuery）。
-    # 实测确认端点为 KDSReportAPIService.GetSysReportData（DynamicFormService.GetSysReportData
-    # 在本账套实测一律报"表单标识为空"，不可用；官方示例里的 DynamicFormService 是
-    # 集成服务云内部逻辑名，真实落点是 KDSReportAPIService）。
-    # 请求体为 {"#data": [formId, model]} 或 {"formId/formid":..,"data":"<model JSON 串>"}；
-    # model 含 FieldKeys/Model(过滤)/StartRow/Limit 等（见 kingdee_query_report 说明）。
-    "report":      "Kingdee.BOS.WebApi.ServicesStub.KDSReportAPIService.GetSysReportData.common.kdsvc",
+    # 实测确认（2026-08-05）：端点为 DynamicFormService.GetSysReportData，且 formid 必须作为
+    # **独立的 HTTP 表单字段**、data 为内层参数的 JSON 字符串（双字段，见 _post 的 report 分支）。
+    # 此前一直报"表单标识为空"/"Unknown Error"的根因就是把 formid 嵌进了 data JSON 对象里，
+    # 或误用了 KDSReportAPIService 端点——都是错的。官方开发者社区示例的 DynamicFormService
+    # 就是本端点，PostMan 示例的 {"parameters":[...]} 是 SDK 层包装，HTTP 层是双字段。
+    "report":      "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.GetSysReportData.common.kdsvc",
 }
 
 # Session 缓存（避免每次请求都重新登录）
@@ -1648,6 +1648,75 @@ async def _post(ep_key: str, payload: Any) -> Any:
     """带自动重新登录的 API 调用（用于 Query 等只读操作）"""
     global _session_id
     start_time = time.perf_counter()
+
+    # 报表端点特殊约定：payload = (form_id, inner_dict) 二元组
+    if ep_key == "report":
+        if isinstance(payload, (tuple, list)) and len(payload) == 2:
+            form_id, report_inner = payload
+        else:
+            # 兼容老写法（对象带 formid 字段）
+            form_id = payload.get("formid", "") or payload.get("FormId", "")
+            report_inner = payload.get("data", payload)
+        if isinstance(report_inner, str):
+            report_inner_str = report_inner
+        else:
+            report_inner_str = json.dumps(report_inner, ensure_ascii=False)
+        request_data = {"formid": form_id, "data": report_inner_str}
+
+        # 记录 API 调用日志
+        api_params = {
+            "ep_key": ep_key,
+            "form_id": form_id if form_id else "",
+            "payload_keys": ["formid", "data(json)"],
+        }
+
+        async def _do_post(session: str) -> httpx.Response:
+            # 报表端点（DynamicFormService.GetSysReportData）实测要求 formid 独立成
+            # HTTP 表单字段、data 为内层参数的 JSON 字符串（双字段），
+            # formid 嵌在 data 里会报"表单标识为空"。
+            return await client.post(
+                _url(ep_key),
+                data={"formid": form_id, "data": report_inner_str},
+                headers={
+                    "Cookie": f"kdservice-sessionid={session}",
+                },
+            )
+
+        success = False
+        error_msg = ""
+        try:
+            async with httpx.AsyncClient(timeout=30, proxy=None,
+                                          transport=httpx.AsyncHTTPTransport(http1=True)) as client:
+                # 没有 session 先登录
+                if not _session_id:
+                    await _login()
+
+                resp = await _do_post(_session_id)
+
+                # session 过期则重新登录重试一次
+                if resp.status_code == 401 or (
+                    resp.status_code == 200 and
+                    ("会话" in resp.text or "session" in resp.text.lower())
+                ):
+                    await _login()
+                    resp = await _do_post(_session_id)
+
+                resp.raise_for_status()
+                success = True
+                return _safe_json(resp)
+        except Exception as e:
+            error_msg = str(e)[:200]
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            log_tool_usage(
+                tool_name=f"api:{ep_key}",
+                params=_sanitize_params(api_params),
+                duration_ms=duration_ms,
+                success=success,
+                result_preview="" if success else error_msg,
+                error_type=type(e).__name__ if not success and 'e' in dir() else "",
+            )
 
     # Query 的 payload 已是 dict（由 _query_payload 返回）
     # 其他操作的 payload 是 list：[formId, {params}]，需要合并
@@ -6498,15 +6567,17 @@ class ReportQueryInput(BaseModel):
     )
     data: dict = Field(
         ...,
-        description="透传给 GetSysReportData 的 model 对象（#data 数组的第 2 个元素），"
+        description="透传给 GetSysReportData 的 model 对象（HTTP data 表单字段的 JSON 字符串内容），"
                     "含 FieldKeys / Model(过滤) / StartRow / Limit 等。字段名依具体报表而定。"
-                    "科目余额表(GL_RPT_AccountBalance)权威示例（金蝶开发者社区官方案例）："
-                    '{"FieldKeys":"FBALANCEID,FBALANCENAME,FACCTTYPE,FCyName,FDEBITLOCAL,FCREDITLOCAL",'
-                    '"SchemeId":"","StartRow":0,"Limit":10,"IsVerifyBaseDataField":"true",'
-                    '"FilterString":[],"Model":{"FACCTBOOKID":{"FNumber":"<账簿编码>"},'
-                    '"FCURRENCY":"1","FSTARTYEAR":"2026","FSTARTPERIOD":"7","FENDYEAR":"2026",'
-                    '"FENDPERIOD":"7","FBALANCELEVEL":"4","FSHOWDETAIL":false,"FFORBIDBALANCE":true,'
-                    '"FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true}}',
+                    "科目余额表(GL_RPT_AccountBalance)权威结构（金蝶开发者社区官方案例 + 实测修正）："
+                    '{"FieldKeys":"<报表真实列Key>","SchemeId":"","StartRow":0,"Limit":10,'
+                    '"IsVerifyBaseDataField":"true","FilterString":[],'
+                    '"Model":{"FACCTBOOKID":{"FNumber":"<账簿编码>"},'
+                    '"FCURRENCY":"1","FSTARTYEAR":2026,"FSTARTPERIOD":7,"FENDYEAR":2026,'
+                    '"FENDPERIOD":7,"FBALANCELEVEL":0,"FSHOWDETAIL":false,"FFORBIDBALANCE":true,'
+                    '"FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true}}。'
+                    "⚠️ FieldKeys 必须是报表真实列 Key（级次 0 能查到数据，猜的列名会触发"
+                    "服务端 totalWidth 渲染错误）；FBALANCELEVEL=0 表示全部级次。",
     )
 
 
@@ -6518,14 +6589,18 @@ class ReportQueryInput(BaseModel):
 async def kingdee_query_report(params: ReportQueryInput) -> str:
     """通过金蝶 WebAPI **GetSysReportData（查询报表数据）** 查询任意总账/财务报表。
 
-    端点：Kingdee.BOS.WebApi.ServicesStub.KDSReportAPIService.GetSysReportData.common.kdsvc
-    （实测确认：DynamicFormService.GetSysReportData 在本账套一律报"表单标识为空"，不可用）。
+    端点：Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.GetSysReportData.common.kdsvc
+    （实测确认：formid 必须作为独立 HTTP 表单字段、data 为内层参数的 JSON 字符串。
+    此前"表单标识为空"的根因是 formid 被嵌进了 data JSON 对象；KDSReportAPIService
+    端点实测也一律 Unknown Error，不可用。）
 
-    请求体为 {"#data": [formId, model]}，model 即本工具的 params.data（#data 数组第 2 个元素）。
+    请求体为 HTTP 双字段：formid = 报表标识；data = JSON 字符串（即本工具 params.data）。
     model 典型结构：FieldKeys(返回字段) + Model(过滤条件) + StartRow/Limit(分页)。
     与单据查询(ExecuteBillQuery)不同，报表分页用 StartRow/Limit，**不是** PageIndex/PageSize；
-    账簿用 FACCTBOOKID.FNumber（按编码，如 "001"），**不是** FBookId 内码；期间用
-    FSTARTYEAR/FSTARTPERIOD/FENDYEAR/FENDPERIOD（**注意是数字不是字符串**），层级用 FBALANCELEVEL。
+    账簿用 FACCTBOOKID.FNumber（按编码，如 "001"）；期间用
+    FSTARTYEAR/FSTARTPERIOD/FENDYEAR/FENDPERIOD，层级用 FBALANCELEVEL。
+    ⚠️ FieldKeys 必须是报表真实列 Key——科目余额表实测：级次选 0（全部级次）能查到数据，
+    但 FieldKeys 用猜的列名会触发服务端 totalWidth 渲染错误；需按报表实际列定义填。
 
     已实测确认的报表 formId（财务会计 → 总账）：
       - 科目余额表   = GL_RPT_AccountBalance
@@ -6533,13 +6608,12 @@ async def kingdee_query_report(params: ReportQueryInput) -> str:
     其余报表 formId 需在 BOS/ApiDoc 逐张查证（核算维度余额表、数量金额总账、日报表、
     多账簿系列、试算平衡表、现金流量表、现金流量查询、报表项目 KDS_RptItem 等）。
 
-    params.data（model）权威示例——科目余额表（金蝶开发者社区官方案例）：
-      {"FieldKeys":"FBALANCEID,FBALANCENAME,FACCTTYPE,FCyName,FDEBITLOCAL,FCREDITLOCAL",
-       "SchemeId":"","StartRow":0,"Limit":10,"IsVerifyBaseDataField":"true",
-       "FilterString":[],
-       "Model":{"FACCTBOOKID":{"FNumber":"<账簿编码>"},"FCURRENCY":"1",
-                "FSTARTYEAR":"2026","FSTARTPERIOD":"7","FENDYEAR":"2026","FENDPERIOD":"7",
-                "FBALANCELEVEL":"4","FSHOWDETAIL":false,"FFORBIDBALANCE":true,
+    params.data（model）权威结构——科目余额表（金蝶开发者社区官方案例 + 2026-08-05 实测）：
+      {"FieldKeys":"<报表真实列Key>","SchemeId":"","StartRow":0,"Limit":10,
+       "IsVerifyBaseDataField":"true","FilterString":[],
+       "Model":{"FACCTBOOKID":{"FNumber":"001"},"FCURRENCY":"1",
+                "FSTARTYEAR":2026,"FSTARTPERIOD":7,"FENDYEAR":2026,"FENDPERIOD":7,
+                "FBALANCELEVEL":0,"FSHOWDETAIL":false,"FFORBIDBALANCE":true,
                 "FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true}}
 
     返回：金蝶原始 JSON（含报表数据 Rows），前端/调用方按需解析。
@@ -6549,9 +6623,8 @@ async def kingdee_query_report(params: ReportQueryInput) -> str:
     """
     try:
         inner = params.data
-        # 权威结构：HTTP 表单字段 data = JSON({"#data": [formId, model]})
-        payload = {"#data": [params.form_id, inner]}
-        result = await _post("report", payload)
+        # 实测确认：HTTP 双字段 formid + data(JSON字符串)，_post 的 report 分支实现
+        result = await _post("report", (params.form_id, inner))
         return _fmt(result)
     except Exception as e:
         return _err(e, op="report")
