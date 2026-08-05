@@ -6,11 +6,17 @@ on:
       - "v*"
   workflow_dispatch:
 
+# PyPI 可信发布(Trusted Publishing / OIDC)：无需任何 token。
+# 前置：在 pypi.org 项目 kingdee-mcp → Manage → Publishing 添加可信发布者，
+#       配置 Owner=WaHaiLong, Repository=KingdeeMCP, Workflow=publish.yml, Environment=(空)。
+# 本工作流须有 `id-token: write` 权限，twine 会自动用 OIDC 令牌上传。
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,8 +32,5 @@ jobs:
       - name: Build distributions
         run: python -m build
 
-      - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      - name: Publish to PyPI (Trusted Publishing, no token)
         run: twine upload dist/*
