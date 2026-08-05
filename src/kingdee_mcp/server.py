@@ -2736,7 +2736,7 @@ async def kingdee_save_bill(params: SaveInput) -> str:
 # 常用单据「已验证 model 骨架」模板
 # 用途：AI 拿到骨架后只填业务数据，跳过"字段名/必填项摸索"的试错。
 # 注意：骨架仅作起点，保存前务必用 kingdee_validate_bill 校验。
-# 字段名以本环境（192.168.1.77 二开账套）实测为准。
+# 字段名以本环境（二开账套）实测为准。
 # ─────────────────────────────────────────────
 BILL_TEMPLATES: dict[str, dict] = {
     "SAL_Quotation": {
