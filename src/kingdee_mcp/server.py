@@ -6569,15 +6569,21 @@ class ReportQueryInput(BaseModel):
         ...,
         description="透传给 GetSysReportData 的 model 对象（HTTP data 表单字段的 JSON 字符串内容），"
                     "含 FieldKeys / Model(过滤) / StartRow / Limit 等。字段名依具体报表而定。"
-                    "科目余额表(GL_RPT_AccountBalance)权威结构（金蝶开发者社区官方案例 + 实测修正）："
-                    '{"FieldKeys":"<报表真实列Key>","SchemeId":"","StartRow":0,"Limit":10,'
+                    "科目余额表(GL_RPT_AccountBalance)权威结构（金蝶开发者社区官方案例 + 2026-08-05 实测）："
+                    '{"FieldKeys":"FBALANCEID,FBALANCENAME,FDEBIT,FCREDIT,FENDDEBIT,FENDCREDIT",'
+                    '"SchemeId":"","StartRow":0,"Limit":10,'
                     '"IsVerifyBaseDataField":"true","FilterString":[],'
-                    '"Model":{"FACCTBOOKID":{"FNumber":"<账簿编码>"},'
-                    '"FCURRENCY":"1","FSTARTYEAR":2026,"FSTARTPERIOD":7,"FENDYEAR":2026,'
-                    '"FENDPERIOD":7,"FBALANCELEVEL":0,"FSHOWDETAIL":false,"FFORBIDBALANCE":true,'
-                    '"FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true}}。'
-                    "⚠️ FieldKeys 必须是报表真实列 Key（级次 0 能查到数据，猜的列名会触发"
-                    "服务端 totalWidth 渲染错误）；FBALANCELEVEL=0 表示全部级次。",
+                    '"Model":{"FACCTBOOKID":{"FNumber":"<账簿编码,如001>"},'
+                    '"FCURRENCY":"1","FSTARTYEAR":<年>,"FSTARTPERIOD":<起始期间>,"FENDYEAR":<年>,'
+                    '"FENDPERIOD":<结束期间>,"FBALANCELEVEL":<级次,1=top,0=全部+需SHOWFULLNAME=true>,'
+                    '"FSHOWDETAIL":false,"FFORBIDBALANCE":true,'
+                    '"FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true,'
+                    '"FSHOWFULLNAME":true}}。'
+                    "⚠️ FieldKeys 必须是报表真实列 Key（猜的列名会触发服务端 totalWidth 渲染错误）。"
+                    "FBALANCELEVEL=0 表示全部级次，但此时必须 FSHOWFULLNAME=true 才能避开"
+                    "AccountBalanceStatement.UpdateAcctName 的 PadLeft(-N) 崩溃。"
+                    "💡 0 行结果不代表查询失败——可能是该账簿/期间 T_GL_BALANCE 本身无数据"
+                    "（如芯之蝶账套 book '001' 金蝶蓝海科技 只有 2020 年演示数据，2026 年返回 0 行是正常）。",
     )
 
 
@@ -6599,8 +6605,11 @@ async def kingdee_query_report(params: ReportQueryInput) -> str:
     与单据查询(ExecuteBillQuery)不同，报表分页用 StartRow/Limit，**不是** PageIndex/PageSize；
     账簿用 FACCTBOOKID.FNumber（按编码，如 "001"）；期间用
     FSTARTYEAR/FSTARTPERIOD/FENDYEAR/FENDPERIOD，层级用 FBALANCELEVEL。
-    ⚠️ FieldKeys 必须是报表真实列 Key——科目余额表实测：级次选 0（全部级次）能查到数据，
-    但 FieldKeys 用猜的列名会触发服务端 totalWidth 渲染错误；需按报表实际列定义填。
+    ⚠️ FieldKeys 必须是报表真实列 Key——猜的列名会触发服务端 totalWidth 渲染错误；
+    FBALANCELEVEL=0（全部级次）时**必须**配 FSHOWFULLNAME=true，否则
+    AccountBalanceStatement.UpdateAcctName 会因 PadLeft(-N) 抛 "totalWidth 要求非负数"。
+    💡 0 行结果通常是该账簿/期间 T_GL_BALANCE 本身无数据，并非查询失败
+    （book '001' 金蝶蓝海科技只有 2020 年演示数据，2026 年返回 0 行属于正常）。
 
     已实测确认的报表 formId（财务会计 → 总账）：
       - 科目余额表   = GL_RPT_AccountBalance
@@ -6608,13 +6617,18 @@ async def kingdee_query_report(params: ReportQueryInput) -> str:
     其余报表 formId 需在 BOS/ApiDoc 逐张查证（核算维度余额表、数量金额总账、日报表、
     多账簿系列、试算平衡表、现金流量表、现金流量查询、报表项目 KDS_RptItem 等）。
 
-    params.data（model）权威结构——科目余额表（金蝶开发者社区官方案例 + 2026-08-05 实测）：
-      {"FieldKeys":"<报表真实列Key>","SchemeId":"","StartRow":0,"Limit":10,
+    params.data（model）权威结构——科目余额表（金蝶开发者社区官方案例 + 2026-08-05 实测
+    book '001' 金蝶蓝海科技 → 2020 年 2 月 期初/本期/本年累计/期末数据完整 72 行）：
+      {"FieldKeys":"FBALANCEID,FBALANCENAME,FACCTTYPE,FACCTGROUP,FCyName,"
+                    "FBEGINDEBIT,FBEGINCREDIT,FDEBIT,FCREDIT,"
+                    "FYTDDEBIT,FYTDCREDIT,FENDDEBIT,FENDCREDIT",
+       "SchemeId":"","StartRow":0,"Limit":10,
        "IsVerifyBaseDataField":"true","FilterString":[],
        "Model":{"FACCTBOOKID":{"FNumber":"001"},"FCURRENCY":"1",
-                "FSTARTYEAR":2026,"FSTARTPERIOD":7,"FENDYEAR":2026,"FENDPERIOD":7,
-                "FBALANCELEVEL":0,"FSHOWDETAIL":false,"FFORBIDBALANCE":true,
-                "FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true}}
+                "FSTARTYEAR":2020,"FSTARTPERIOD":2,"FENDYEAR":2020,"FENDPERIOD":2,
+                "FBALANCELEVEL":1,"FSHOWDETAIL":false,"FFORBIDBALANCE":true,
+                "FBALANCEZERO":true,"FPERIODNOBALANCE":true,"FYEARNOBALANCE":true,
+                "FSHOWFULLNAME":true}}
 
     返回：金蝶原始 JSON（含报表数据 Rows），前端/调用方按需解析。
 
