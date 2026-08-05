@@ -656,6 +656,9 @@ _EP = {
     "number_rule":   "Kingdee.BOS.WebApi.ServicesStub.NumberRuleService.QueryNumberRule.common.kdsvc",
     "sysconfig":    "Kingdee.BOS.WebApi.ServicesStub.SystemConfigService.QuerySystemConfig.common.kdsvc",
     "metadata":    "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.QueryBusinessInfo.common.kdsvc",
+    # 报表查询：总账/财务报表走专用 KDSReportAPIService.GetSysReportData（非 ExecuteBillQuery）
+    # 请求体为 {"formid": <formId>, "data": "<内层报表参数 JSON 字符串>"} 双层包裹（已据反编译 IsWriteDataOp 确认）
+    "report":      "Kingdee.BOS.WebApi.ServicesStub.KDSReportAPIService.GetSysReportData.common.kdsvc",
 }
 
 # Session 缓存（避免每次请求都重新登录）
@@ -6453,6 +6456,65 @@ async def kingdee_query_production_report(params: ProductionReportQueryInput) ->
         return _fmt(result)
     except Exception as e:
         return _err(e, op="query")
+
+
+# ─────────────────────────────────────────────
+# 财务报表查询（GetSysReportData，专用 KDSReportAPIService 端点）
+# ─────────────────────────────────────────────
+
+class ReportQueryInput(BaseModel):
+    """财务报表查询入参：form_id 为报表标识，data 为透传给 GetSysReportData 的内部参数对象。"""
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    form_id: str = Field(
+        ...,
+        description="报表 formId。已实测确认：科目余额表=GL_RPT_AccountBalance、"
+                    "总账账龄分析表=GL_AgingSchedule（无 RPT_ 前缀）。"
+                    "其余报表（核算维度余额表/数量金额总账/日报表/多账簿系列/试算平衡表/"
+                    "现金流量表/现金流量查询/报表项目 KDS_RptItem 等）formId 需在 BOS/ApiDoc 逐张查证。",
+    )
+    data: dict = Field(
+        ...,
+        description="透传给 GetSysReportData 的内部参数对象(JSON)，含报表过滤(账簿/年度/期间/科目等)与分页。"
+                    "字段名依具体报表而定，请用你账套的 BOS/在线测试确认。常见形态示例："
+                    '{"ReportParams":{"FBookId":"<账簿内码>","FYear":"2026","FPeriod":"8"},'
+                    '"FieldKeys":"FAccountNumber,FAccountName,FBeginBalance","PageIndex":1,"PageSize":1000}',
+    )
+
+
+@mcp.tool(
+    name="kingdee_query_report",
+    annotations={"title": "财务报表/账表查询(GetSysReportData)", "readOnlyHint": True, "destructiveHint": False,
+                 "idempotentHint": True, "openWorldHint": False}
+)
+async def kingdee_query_report(params: ReportQueryInput) -> str:
+    """通过金蝶专用报表服务 **GetSysReportData（查询报表数据）** 查询任意总账/财务报表。
+
+    与单据查询(ExecuteBillQuery)不同，报表走独立的 KDSReportAPIService.GetSysReportData 端点，
+    请求体为 {formid, data} 包裹，内层 data 为报表过滤/分页参数对象（依具体报表而定）。
+
+    已实测确认的报表 formId（财务会计 → 总账）：
+      - 科目余额表   = GL_RPT_AccountBalance
+      - 总账账龄分析表 = GL_AgingSchedule（注意：无 RPT_ 前缀）
+    其余报表 formId 需在 BOS/ApiDoc 逐张查证（核算维度余额表、数量金额总账、日报表、
+    多账簿系列、试算平衡表、现金流量表、现金流量查询、报表项目 KDS_RptItem 等）。
+
+    params.data 为透传给 GetSysReportData 的内部参数对象，常见字段示例（具体以报表元数据为准，
+    请在你自己的账套用 BOS 或在线测试验证字段名）：
+      {"ReportParams": {"FBookId": "<账簿内码>", "FYear": "2026", "FPeriod": "8"},
+       "FieldKeys": "FAccountNumber,FAccountName,FBeginBalance", "PageIndex": 1, "PageSize": 1000}
+
+    返回：金蝶原始 JSON（含报表数据），前端/调用方按需解析。
+
+    Raises/Returns:
+        str: JSON（成功为报表数据；失败为错误 JSON）
+    """
+    try:
+        inner = params.data
+        payload = {"formid": params.form_id, "data": json.dumps(inner, ensure_ascii=False)}
+        result = await _post("report", payload)
+        return _fmt(result)
+    except Exception as e:
+        return _err(e, op="report")
 
 
 # ─────────────────────────────────────────────
