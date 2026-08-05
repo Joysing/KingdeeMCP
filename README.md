@@ -326,6 +326,11 @@ kingdee-mcp 提供两层能力：
 - [MCP 协议文档](https://modelcontextprotocol.io/)
 - [金蝶云星空官网](https://www.kingdee.com/)
 
+## 联系方式
+
+- QQ：1724349716
+- 邮箱：1724349716@qq.com
+
 ## License
 
 MIT © WaHaiLong

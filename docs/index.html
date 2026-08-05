@@ -1237,6 +1237,14 @@
         </div>
         <div class="faq-list">
           <div class="faq-item">
+            <div class="faq-question">2026-08-05 · 0.2.1 发布 + 报表查询打通</div>
+            <div class="faq-answer">财务报表查询经实测打通：科目余额表、试算平衡表、账龄分析表等通过金蝶专用报表接口 GetSysReportData 正常出数；改用账号密码(ValidateUser)登录的原因说明已订正（以真实用户身份执行、携带自身业务权限）；并通过 PyPI 可信发布(OIDC)免 token 发布 0.2.1。</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">2026-08-05 · 0.2.0 财务报表模块</div>
+            <div class="faq-answer">新增财务报表查询与通用导出能力，覆盖科目余额表、试算平衡表、账龄分析表、总账等总账报表，统一走金蝶 WebAPI 专用报表查询服务 GetSysReportData（非普通单据 formid）。</div>
+          </div>
+          <div class="faq-item">
             <div class="faq-question">2026-07 · 字段顺序修复 + 登录简化</div>
             <div class="faq-answer">修复销售报价单保存报"含税单价不能小于等于0"的真正根因（财务信息须排在分录之前）；登录改为仅账号密码(ValidateUser)，移除第三方应用授权。</div>
           </div>
@@ -1296,6 +1304,7 @@
         <a href="https://www.kingdee.com/" target="_blank">金蝶官网</a>
       </div>
       <p class="footer-copy">Kingdee MCP Server - 支持所有 MCP 兼容客户端</p>
+      <p class="footer-copy">联系方式：QQ 1724349716 ｜ 邮箱 <a href="mailto:1724349716@qq.com">1724349716@qq.com</a></p>
     </div>
   </footer>
 
