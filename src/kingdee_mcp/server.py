@@ -1617,7 +1617,9 @@ async def _login() -> str:
     """登录金蝶，返回 SessionId，失败抛异常。
 
     仅支持账号密码登录 ValidateUser(acctID, username, password, lcid)，
-    不使用第三方应用授权（LoginByAppSecret），避免 APP 白名单限制。
+    不使用第三方应用授权（LoginByAppSecret）：账号密码登录以真实用户身份执行
+    WebAPI，会携带该用户自身的业务权限（含数据权限控制）；应用授权方式不携带
+    真实用户权限，报表等依赖数据权限的查询会受应用授权范围限制。
     """
     global _session_id
     if not PASSWORD:
