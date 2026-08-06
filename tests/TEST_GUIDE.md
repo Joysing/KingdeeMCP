@@ -409,7 +409,7 @@ kingdee_query_approval_flow({
 
 ### 7.5 查询权限变更
 ```python
-kingdee_query_permission({
+kingdee_query_permission_changes({
     "filter_string": "",
     "limit": 20
 })

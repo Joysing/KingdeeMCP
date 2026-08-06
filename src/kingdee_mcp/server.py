@@ -5172,11 +5172,11 @@ async def kingdee_query_approval_flow(params: ApprovalFlowInput) -> str:
 
 
 @mcp.tool(
-    name="kingdee_query_permission",
+    name="kingdee_query_permission_changes",
     annotations={"title": "查询权限变更", "readOnlyHint": True, "destructiveHint": False,
                  "idempotentHint": True, "openWorldHint": False}
 )
-async def kingdee_query_permission(params: PermissionChangeInput) -> str:
+async def kingdee_query_permission_changes(params: PermissionChangeInput) -> str:
     """查询金蝶云星空的权限变更记录。
 
     记录用户权限的授予、撤销、修改操作。

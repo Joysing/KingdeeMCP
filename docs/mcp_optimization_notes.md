@@ -21,6 +21,12 @@
 - **现象**：启动 / 列工具时打印 `WARNING Tool already exists: kingdee_query_permission`（`tool_manager.py:70`）。
 - **影响**：无害，但掩盖真正需要关注的警告。
 - **建议修复**：在 `server.py` 确认是否同一函数被 `@mcp.tool()` 注册了两次，去重。
+- **【已修复 · 2026-08-06】根因不是「同一函数注册两次」，而是两个不同函数抢了同名 `kingdee_query_permission`**：
+  - 行 ~3988：`kingdee_query_permission`（`PermissionQueryInput`）→ 查询权限列表；
+  - 行 ~5174：`kingdee_query_permission`（`PermissionChangeInput`）→ 查询权限变更记录（审计）。
+  - 后者覆盖前者，导致「查询权限列表」工具实际丢失 + 启动告警。
+  - **修复**：第二个改名为 `kingdee_query_permission_changes`（语义贴合「查询权限变更记录」），同步更新 `tests/TEST_GUIDE.md` 7.5 示例。两个工具现已独立共存，无重复注册告警。
+  - 另：`__init__.py` 的 `__version__` 漏写为 `"0.1.0"`，已对齐 PyPI 实际版本 `"0.2.1"`。
 
 ### 3. WebAPI 错误对 AI 不友好（多层嵌套）
 - **现象**：字段缺失等错误包裹在 `Result.ResponseStatus.Errors[].Message` 里，AI 需解析多层 JSON 才能拿到可读信息。
