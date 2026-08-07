@@ -7268,11 +7268,63 @@ def _run_check() -> int:
 
 
 def main():
-    """MCP Server 入口点"""
+    """MCP Server 入口点
+
+    用法:
+      kingdee-mcp                              # 默认 stdio 模式（本地 MCP 客户端）
+      kingdee-mcp --transport sse              # SSE 远程模式，监听 http://host:port/sse
+      kingdee-mcp --transport streamable-http  # Streamable HTTP 远程模式，监听 http://host:port/mcp
+    远程模式可用 --host / --port 指定监听地址（默认 127.0.0.1:8000）。
+    也支持环境变量 KINGDEE_MCP_TRANSPORT / KINGDEE_MCP_HOST / KINGDEE_MCP_PORT。
+    """
     import sys
+    import argparse
+
     if len(sys.argv) > 1 and sys.argv[1] in ("--check", "check"):
         sys.exit(_run_check())
-    mcp.run()
+
+    parser = argparse.ArgumentParser(
+        prog="kingdee-mcp",
+        description="金蝶云星空 MCP Server (Kingdee Cloud K/3)",
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default=os.environ.get("KINGDEE_MCP_TRANSPORT", "stdio"),
+        help="传输方式: stdio(默认, 本地) / sse / streamable-http(远程部署用)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("KINGDEE_MCP_HOST", "127.0.0.1"),
+        help="sse / streamable-http 监听地址 (默认 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("KINGDEE_MCP_PORT", "8000")),
+        help="sse / streamable-http 监听端口 (默认 8000)",
+    )
+    args = parser.parse_args()
+
+    # run() 不接收 host/port，需设置到 FastMCP 实例的 settings 上
+    try:
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
+    except Exception as e:  # pragma: no cover
+        print(f"[WARN] 设置监听地址/端口失败: {e}")
+
+    _run_server(transport=args.transport)
+
+
+def _run_server(transport: str) -> None:
+    """启动 MCP Server，兼容不同 mcp 版本支持的 transport 取值。"""
+    try:
+        mcp.run(transport=transport)
+    except ValueError:
+        # 老版本 mcp（<1.9）不支持 streamable-http，回退到 sse / stdio
+        fallback = "sse" if transport != "sse" else "stdio"
+        print(f"[WARN] 当前 mcp 版本不支持 transport={transport!r}，回退到 {fallback!r}")
+        mcp.run(transport=fallback)
 
 
 if __name__ == "__main__":
